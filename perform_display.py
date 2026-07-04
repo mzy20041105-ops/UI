@@ -43,6 +43,19 @@ STRATEGY_CAPITAL_COLUMNS = {
 CASH_FLOW_COLUMNS = {"cashflow", "netflow"}
 STRATEGY_CAPITAL_COLUMN = "__strategy_capital__"
 CASH_FLOW_COLUMN = "__cash_flow__"
+CASH_COLUMNS = {"cash", "availablecash", "现金", "可用资金"}
+MARKET_VALUE_COLUMNS = {"marketvalue", "positionvalue", "市值", "持仓市值"}
+ACTUAL_POSITION_COLUMNS = {"actualposition", "actualweight", "实际仓位"}
+CASH_COLUMN = "__cash__"
+MARKET_VALUE_COLUMN = "__market_value__"
+ACTUAL_POSITION_COLUMN = "__actual_position__"
+PORTFOLIO_AUX_COLUMNS = {
+    STRATEGY_CAPITAL_COLUMN,
+    CASH_FLOW_COLUMN,
+    CASH_COLUMN,
+    MARKET_VALUE_COLUMN,
+    ACTUAL_POSITION_COLUMN,
+}
 PORTFOLIO_JSON_KEYS = {
     "portfolio",
     "portfoliohistory",
@@ -355,6 +368,12 @@ def normalize_portfolio_table(raw_df: pd.DataFrame) -> pd.DataFrame:
             special_columns[col] = STRATEGY_CAPITAL_COLUMN
         elif normalized in CASH_FLOW_COLUMNS and CASH_FLOW_COLUMN not in special_columns.values():
             special_columns[col] = CASH_FLOW_COLUMN
+        elif normalized in CASH_COLUMNS and CASH_COLUMN not in special_columns.values():
+            special_columns[col] = CASH_COLUMN
+        elif normalized in MARKET_VALUE_COLUMNS and MARKET_VALUE_COLUMN not in special_columns.values():
+            special_columns[col] = MARKET_VALUE_COLUMN
+        elif normalized in ACTUAL_POSITION_COLUMNS and ACTUAL_POSITION_COLUMN not in special_columns.values():
+            special_columns[col] = ACTUAL_POSITION_COLUMN
     if special_columns:
         df = df.rename(columns=special_columns)
 
@@ -366,7 +385,7 @@ def normalize_portfolio_table(raw_df: pd.DataFrame) -> pd.DataFrame:
     net_columns = [col for col in money_df.columns if normalize_column_name(col) in {"net", "nav", "净值", "总资金", "资金量"}]
     if net_columns:
         keep_columns = [net_columns[0]]
-        keep_columns.extend(col for col in (STRATEGY_CAPITAL_COLUMN, CASH_FLOW_COLUMN) if col in money_df.columns)
+        keep_columns.extend(col for col in PORTFOLIO_AUX_COLUMNS if col in money_df.columns)
         money_df = money_df[keep_columns].rename(columns={net_columns[0]: "net"})
 
     money_df = money_df.groupby(money_df.index).last().sort_index()
@@ -920,7 +939,7 @@ def portfolio_nav(money_df: pd.DataFrame, options: dict[str, Any]) -> tuple[pd.S
     if selected.empty:
         raise AppError("所选区间内没有资金量数据。")
 
-    asset_columns = [col for col in selected.columns if col not in {STRATEGY_CAPITAL_COLUMN, CASH_FLOW_COLUMN}]
+    asset_columns = [col for col in selected.columns if col not in PORTFOLIO_AUX_COLUMNS]
     if not asset_columns:
         raise AppError("No usable total asset column was found.")
     selected_assets = selected[asset_columns]
@@ -948,6 +967,84 @@ def portfolio_nav(money_df: pd.DataFrame, options: dict[str, Any]) -> tuple[pd.S
         nav = total_capital / total_capital.iloc[0]
     nav.name = LIVE_LABEL
     return nav, selected_assets
+
+
+def trim_leading_flat_live_nav(nav: pd.Series, min_flat_points: int = 5) -> tuple[pd.Series, int]:
+    clean = nav.dropna().sort_index()
+    if len(clean) <= min_flat_points:
+        return clean, 0
+    values = clean.to_numpy(dtype=float)
+    tolerance = max(abs(float(values[0])) * 1e-10, 1e-12)
+    changed = np.flatnonzero(~np.isclose(values, values[0], rtol=0.0, atol=tolerance))
+    if len(changed) == 0 or int(changed[0]) < min_flat_points:
+        return clean, 0
+    first_live = int(changed[0])
+    return clean.iloc[first_live:], first_live
+
+
+def nav_in_window(nav: pd.Series, start: pd.Timestamp, end: pd.Timestamp | None = None) -> pd.Series:
+    clean = nav.dropna().sort_index()
+    mask = pd.DatetimeIndex(clean.index) >= pd.Timestamp(start)
+    if end is not None:
+        mask &= pd.DatetimeIndex(clean.index) <= pd.Timestamp(end)
+    selected = clean.loc[mask]
+    if selected.empty:
+        return selected
+    return selected / selected.iloc[0]
+
+
+def current_position_summary(
+    money_df: pd.DataFrame,
+    signal_df: pd.DataFrame | None,
+    end_date: pd.Timestamp,
+) -> dict[str, Any]:
+    selected = money_df.loc[money_df.index <= end_date].sort_index()
+    if selected.empty:
+        return {"target": None, "actual": None, "asOf": "", "actualNote": "没有可用资产快照"}
+
+    latest = selected.ffill().iloc[-1]
+    asset_columns = [col for col in selected.columns if col not in PORTFOLIO_AUX_COLUMNS]
+    total_asset = finite_or_none(latest[asset_columns].sum(min_count=1)) if asset_columns else None
+    strategy_capital = finite_or_none(latest.get(STRATEGY_CAPITAL_COLUMN))
+    market_value = finite_or_none(latest.get(MARKET_VALUE_COLUMN))
+    cash = finite_or_none(latest.get(CASH_COLUMN))
+    actual = finite_or_none(latest.get(ACTUAL_POSITION_COLUMN))
+    actual_note = "asset JSON 的 actual_position"
+
+    if actual is not None and abs(actual) > 2.0:
+        actual /= 100.0
+    if actual is None and market_value is not None:
+        basis = strategy_capital if strategy_capital is not None and strategy_capital > 0 else total_asset
+        if basis is not None and basis > 0:
+            actual = market_value / basis
+            actual_note = "持仓市值 / 策略本金" if basis == strategy_capital else "持仓市值 / 总资产"
+    if actual is None and cash is not None and total_asset is not None and total_asset > 0 and strategy_capital is None:
+        actual = (total_asset - cash) / total_asset
+        actual_note = "1 - 现金 / 总资产"
+    if actual is None:
+        actual_note = "asset JSON 需提供 market_value 或 actual_position"
+
+    target = None
+    target_date = ""
+    if signal_df is not None and not signal_df.empty:
+        try:
+            signals = normalize_strategy_signals(signal_df)
+            signals = signals.loc[signals["date"] <= pd.Timestamp(end_date).normalize()]
+            if not signals.empty:
+                latest_signal_date = pd.Timestamp(signals["date"].max())
+                latest_weights = signals.loc[signals["date"] == latest_signal_date, "weight"]
+                target = finite_or_none(latest_weights.abs().sum())
+                target_date = latest_signal_date.strftime("%Y-%m-%d")
+        except AppError:
+            pass
+
+    return {
+        "target": target,
+        "actual": finite_or_none(actual),
+        "asOf": format_timestamp(selected.index[-1]),
+        "targetDate": target_date,
+        "actualNote": actual_note,
+    }
 
 
 def filter_hourly_portfolio_points(money_df: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
@@ -1805,6 +1902,12 @@ def analyze_payload(payload: dict[str, Any], progress_callback: ProgressCallback
     report_progress(progress_callback, 24, "计算实盘曲线", "生成资金净值")
     display_index = pd.DatetimeIndex([])
     nav_raw, selected_money = portfolio_nav(money_df, options)
+    nav_raw, removed_flat_points = trim_leading_flat_live_nav(nav_raw)
+    if removed_flat_points:
+        warnings.append(
+            f"检测到实盘开始前有 {removed_flat_points} 个连续不变资金点，"
+            f"实盘比较区间已从 {format_timestamp(nav_raw.index.min())} 开始。"
+        )
     nav = resample_nav(nav_raw, freq)
     if len(nav) < 2:
         raise AppError("调频后有效净值点不足，请换更长区间或更高频率。")
@@ -1982,9 +2085,35 @@ def analyze_payload(payload: dict[str, Any], progress_callback: ProgressCallback
         if len(series) >= 2
     }
 
+    comparison_start = pd.Timestamp(nav.index.min()).normalize()
+    comparison_end = pd.Timestamp(nav.index.max())
+    comparison_strategy_metrics: dict[str, dict[str, Any]] = {}
+    comparison_excess_return_metrics: dict[str, dict[str, float | None]] = {}
+    for strategy_label, strategy_nav in raw_strategy_navs.items():
+        comparison_strategy_nav = nav_in_window(strategy_nav, comparison_start, comparison_end)
+        if len(comparison_strategy_nav) >= 2:
+            comparison_strategy_metrics[strategy_label] = nav_metrics_for_frequency(
+                comparison_strategy_nav,
+                freq,
+                risk_free_annual,
+            )
+        for bench_label, bench_nav in raw_benchmark_navs.items():
+            comparison_bench_nav = nav_in_window(bench_nav, comparison_start, comparison_end)
+            comparison_excess = benchmark_excess_series(
+                strategy_label,
+                comparison_strategy_nav,
+                bench_label,
+                comparison_bench_nav,
+            )
+            if comparison_excess is not None:
+                comparison_excess_return_metrics.setdefault(strategy_label, {})[bench_label] = finite_or_none(
+                    comparison_excess.dropna().iloc[-1]
+                )
+
     asset_snapshot = selected_money.tail(1).T.reset_index()
     asset_snapshot.columns = ["asset", "capital"]
     asset_snapshot["capital"] = asset_snapshot["capital"].map(finite_or_none)
+    position_summary = current_position_summary(money_df, json_strategy_df, window_end)
     output_index = union_series_indexes(normalized_nav_series.values())
     if len(output_index) == 0:
         output_index = pd.DatetimeIndex(nav.index)
@@ -1996,6 +2125,7 @@ def analyze_payload(payload: dict[str, Any], progress_callback: ProgressCallback
             "frequency": freq,
             "period": options.get("period") or "1Y",
             "dateRange": [format_timestamp(output_index.min()), format_timestamp(output_index.max())],
+            "comparisonDateRange": [format_timestamp(comparison_start), format_timestamp(comparison_end)],
             "assetCount": int(selected_money.shape[1]),
             "sourceRows": int(selected_money.shape[0]),
             "resolvedCodes": resolved_codes,
@@ -2008,7 +2138,9 @@ def analyze_payload(payload: dict[str, Any], progress_callback: ProgressCallback
             "portfolio": nav_metrics_for_frequency(nav, freq, risk_free_annual),
             "benchmarks": benchmark_metrics,
             "strategies": strategy_metrics,
+            "comparisonStrategies": comparison_strategy_metrics,
             "excessReturns": excess_return_metrics,
+            "comparisonExcessReturns": comparison_excess_return_metrics,
             "excessSharpes": excess_sharpe_metrics,
         },
         "series": {
@@ -2017,6 +2149,7 @@ def analyze_payload(payload: dict[str, Any], progress_callback: ProgressCallback
             "capital": series_to_rows({"总资金": selected_money.sum(axis=1, min_count=1)}),
         },
         "assets": asset_snapshot.to_dict(orient="records"),
+        "positions": position_summary,
         "warnings": warnings,
     }
 
@@ -2261,6 +2394,39 @@ def _self_test() -> None:
     capital_change_money = normalize_portfolio_table(capital_change_raw)
     capital_change_nav, _ = portfolio_nav(capital_change_money, {"period": "ALL"})
     assert [round(float(value), 5) for value in capital_change_nav] == [1.0, 0.98, 0.98, 0.97804]
+
+    synthetic_dates = pd.bdate_range("2026-05-25", periods=14) + pd.Timedelta(hours=15)
+    synthetic_nav = pd.Series([1.0] * 10 + [1.02, 1.01, 1.03, 1.04], index=synthetic_dates)
+    trimmed_nav, removed_points = trim_leading_flat_live_nav(synthetic_nav)
+    assert removed_points == 10
+    assert trimmed_nav.index.min() == synthetic_dates[10]
+    assert nav_in_window(synthetic_nav, synthetic_dates[10].normalize(), synthetic_dates[-1]).iloc[0] == 1.0
+
+    position_raw = pd.DataFrame(
+        [
+            {
+                "date": "2026-07-02 15:00",
+                "total_asset": 250000,
+                "strategy_capital": 100000,
+                "market_value": 80000,
+            }
+        ]
+    )
+    position_money = normalize_portfolio_table(position_raw)
+    position_signals = pd.DataFrame(
+        {
+            "date": ["2026-07-02", "2026-07-02"],
+            "code": ["920001.BJ", "920002.BJ"],
+            "weight": [0.4, 0.6],
+        }
+    )
+    position_summary = current_position_summary(
+        position_money,
+        position_signals,
+        pd.Timestamp("2026-07-02 23:59"),
+    )
+    assert position_summary["target"] == 1.0
+    assert position_summary["actual"] == 0.8
 
     print("self-test ok")
 

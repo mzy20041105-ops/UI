@@ -98,9 +98,12 @@ python build_analysis_json.py \
   "date": "2026-07-02",
   "time": "09:30",
   "total_asset": 251000,
-  "strategy_capital": 100000
+  "strategy_capital": 100000,
+  "market_value": 80000
 }
 ```
+
+其中 `market_value` 用于计算当前实际仓位：优先按 `持仓市值 / 策略本金` 计算。也可以直接提供小数格式的 `actual_position`，例如 `0.8` 表示 80%。
 
 策略信号文件名建议使用交易日期，例如 `2026-07-02.json`：
 

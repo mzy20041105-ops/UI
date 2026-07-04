@@ -46,6 +46,23 @@ CASH_FLOW_KEYS = (
     "netFlow",
 )
 
+CASH_KEYS = (
+    "cash",
+    "available_cash",
+    "availableCash",
+    "现金",
+    "可用资金",
+)
+
+MARKET_VALUE_KEYS = (
+    "market_value",
+    "marketValue",
+    "position_value",
+    "positionValue",
+    "持仓市值",
+    "市值",
+)
+
 DATE_KEYS = (
     "date",
     "datetime",
@@ -262,6 +279,12 @@ def build_portfolio(asset_dir: Path) -> list[dict[str, Any]]:
         cash_flow = first_number(payload, CASH_FLOW_KEYS)
         if cash_flow is not None:
             row["cash_flow"] = cash_flow
+        cash = first_number(payload, CASH_KEYS)
+        if cash is not None:
+            row["cash"] = cash
+        market_value = first_number(payload, MARKET_VALUE_KEYS)
+        if market_value is not None:
+            row["market_value"] = market_value
         rows_by_time[timestamp] = row
     if not rows_by_time:
         raise ValueError(f"No asset JSON files found in {asset_dir}")

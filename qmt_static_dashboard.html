@@ -354,6 +354,31 @@
       font-size: 15px;
       margin: 0 0 12px;
     }
+    .position-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding-bottom: 14px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .position-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+    .position-item strong {
+      display: block;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    .position-note {
+      grid-column: 1 / -1;
+      min-height: 14px;
+      color: var(--muted);
+      font-size: 10px;
+    }
     .mini-table {
       width: 100%;
       border-collapse: collapse;
@@ -498,6 +523,17 @@
 
         <aside class="side-panel" id="sidePanel" style="display:none;">
           <h3>资产快照</h3>
+          <div class="position-summary">
+            <div class="position-item">
+              <span>当前目标仓位</span>
+              <strong id="targetPosition">--</strong>
+            </div>
+            <div class="position-item">
+              <span>当前实际仓位</span>
+              <strong id="actualPosition">--</strong>
+            </div>
+            <div class="position-note" id="positionNote"></div>
+          </div>
           <table class="mini-table">
             <thead><tr><th>资产</th><th>资金量</th></tr></thead>
             <tbody id="assetBody"></tbody>
@@ -645,6 +681,7 @@
       $("chartTabs").querySelectorAll("button").forEach((btn) => btn.classList.remove("active"));
       event.target.classList.add("active");
       state.chart = event.target.dataset.chart;
+      updateRangeText();
       updateMetrics();
       renderChart();
     });
@@ -656,6 +693,7 @@
       $("emptyState").style.display = "grid";
       $("rangeText").textContent = "等待 analysis_latest.json";
       $("assetBody").innerHTML = "";
+      updatePositions(null);
       resetProgress(true);
       setStatus("本地服务已就绪");
       updateMetrics(null);
@@ -719,14 +757,27 @@
       $("chartPanel").style.display = "block";
       $("sidePanel").style.display = "block";
       $("emptyState").style.display = "none";
-      const [start, end] = result.metadata.dateRange;
-      $("rangeText").textContent = `${start} 至 ${end} · ${result.metadata.assetCount} 个资产 · ${result.metadata.sourceRows} 个资金点`;
+      updateRangeText();
       const warnings = result.warnings || [];
       if (warnings.length) setStatus(warnings.join("；"), "warn");
       else setStatus("分析完成");
       updateMetrics();
       updateAssets(result.assets || []);
+      updatePositions(result.positions || null);
       renderChart();
+    }
+
+    function updateRangeText() {
+      if (!state.result) return;
+      const metadata = state.result.metadata || {};
+      const comparisonView = state.chart === "live" || state.chart === "both";
+      const range = comparisonView && metadata.comparisonDateRange
+        ? metadata.comparisonDateRange
+        : metadata.dateRange || [];
+      const start = range[0] || "--";
+      const end = range[1] || "--";
+      const suffix = comparisonView ? " · 与实盘同区间" : "";
+      $("rangeText").textContent = `${start} 至 ${end} · ${metadata.assetCount || 0} 个资产 · ${metadata.sourceRows || 0} 个资金点${suffix}`;
     }
 
     function updateMetrics(metrics = state.result && state.result.metrics) {
@@ -766,13 +817,20 @@
         return strategyEntries.map(([name, item]) => ({ name, item }));
       }
       if (state.chart === "both") {
-        return [{ name: LIVE_LABEL, item: metrics.portfolio || null }, ...strategyEntries.map(([name, item]) => ({ name, item }))];
+        const comparisonStrategies = metrics && metrics.comparisonStrategies ? metrics.comparisonStrategies : strategies;
+        return [
+          { name: LIVE_LABEL, item: metrics.portfolio || null },
+          ...Object.entries(comparisonStrategies).map(([name, item]) => ({ name, item }))
+        ];
       }
       return [{ name: LIVE_LABEL, item: metrics.portfolio || null }];
     }
 
     function excessReturn(metrics, name) {
-      const excess = metrics && metrics.excessReturns ? metrics.excessReturns : {};
+      const useComparison = state.chart === "both" && name !== LIVE_LABEL;
+      const excess = useComparison && metrics && metrics.comparisonExcessReturns
+        ? metrics.comparisonExcessReturns
+        : metrics && metrics.excessReturns ? metrics.excessReturns : {};
       const row = excess[name] || {};
       if (row[BENCHMARK_FALLBACK] !== undefined) return row[BENCHMARK_FALLBACK];
       const firstValue = Object.values(row).find((value) => value !== null && value !== undefined);
@@ -809,15 +867,48 @@
         });
     }
 
+    function updatePositions(positions) {
+      const data = positions || {};
+      $("targetPosition").textContent = fmtPct(data.target);
+      $("actualPosition").textContent = fmtPct(data.actual);
+      const targetDate = data.targetDate ? `目标 ${data.targetDate}` : "";
+      const actualNote = data.actualNote || "";
+      $("positionNote").textContent = [targetDate, actualNote].filter(Boolean).join(" · ");
+    }
+
     function currentRows() {
       if (!state.result) return [];
       const seriesName = state.chart === "excess" ? "excess" : "nav";
       const rows = state.result.series[seriesName] || [];
       const wanted = chartKeys();
-      return rows.map((row) => {
+      const projected = rows.map((row) => {
         const item = { date: row.date };
         wanted.forEach((key) => {
           if (Object.prototype.hasOwnProperty.call(row, key)) item[key] = row[key];
+        });
+        return item;
+      }).filter((row) => rowHasAnyValue(row, wanted));
+      if (state.chart === "live" || state.chart === "both") {
+        return comparisonRows(projected, wanted);
+      }
+      return projected;
+    }
+
+    function comparisonRows(rows, wanted) {
+      const metadata = state.result && state.result.metadata ? state.result.metadata : {};
+      const range = metadata.comparisonDateRange || [];
+      const start = range[0] || "";
+      const end = range[1] || "";
+      const selected = rows.filter((row) => (!start || row.date >= start) && (!end || row.date <= end));
+      const bases = {};
+      wanted.forEach((key) => {
+        const first = selected.find((row) => isFiniteValue(row[key]));
+        if (first && Number(first[key]) !== 0) bases[key] = Number(first[key]);
+      });
+      return selected.map((row) => {
+        const item = { date: row.date };
+        wanted.forEach((key) => {
+          if (isFiniteValue(row[key]) && bases[key] !== undefined) item[key] = Number(row[key]) / bases[key];
         });
         return item;
       }).filter((row) => rowHasAnyValue(row, wanted));
