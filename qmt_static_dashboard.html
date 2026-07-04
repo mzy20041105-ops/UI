@@ -1,0 +1,1078 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>实盘与策略回测</title>
+  <style>
+    :root {
+      --bg: #f8f4ef;
+      --panel: #fffdf9;
+      --panel-soft: #fff3e6;
+      --text: #2a241f;
+      --muted: #7b6b5d;
+      --line: #e5d7c8;
+      --blue: #b65a2a;
+      --green: #2f7d6d;
+      --red: #b8443c;
+      --amber: #c2842f;
+      --violet: #6f5aa7;
+      --shadow: 0 14px 34px rgba(85, 58, 35, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: linear-gradient(180deg, #fbf7f1 0%, var(--bg) 44%, #f3efe9 100%);
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 316px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    aside {
+      background: #fffaf4;
+      border-right: 1px solid var(--line);
+      padding: 20px 18px;
+      overflow-y: auto;
+    }
+    main {
+      padding: 24px 26px;
+      overflow: hidden;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #b65a2a, #2f7d6d);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+    }
+    h1 {
+      font-size: 18px;
+      line-height: 1.2;
+      margin: 0;
+      font-weight: 700;
+    }
+    .subtle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .field {
+      margin: 14px 0;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: #46392f;
+      font-weight: 650;
+      margin-bottom: 7px;
+    }
+    input[type="text"], input[type="password"], input[type="date"], input[type="number"] {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: #fffefd;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(182, 90, 42, 0.16);
+    }
+    .file-box {
+      border: 1px dashed #d0ad8d;
+      background: #fff7ed;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    input[type="file"] {
+      width: 100%;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .segmented.period {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .segmented.freq {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .segmented button,
+    .tabbar button {
+      height: 34px;
+      border: 1px solid var(--line);
+      background: #fffefd;
+      color: #4f4338;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .segmented button.active,
+    .tabbar button.active {
+      background: #fff0df;
+      border-color: #d79355;
+      color: #8c3f18;
+      font-weight: 700;
+    }
+    .bench {
+      display: grid;
+      gap: 10px;
+    }
+    .bench-row {
+      display: grid;
+      grid-template-columns: 20px 1fr 112px;
+      align-items: center;
+      gap: 8px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .primary, .secondary {
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .primary {
+      flex: 1;
+      color: #fff;
+      background: var(--blue);
+    }
+    .primary:disabled {
+      background: #b9a596;
+      cursor: wait;
+    }
+    .secondary {
+      width: 42px;
+      color: #4f4338;
+      background: #fffefd;
+      border-color: var(--line);
+      font-size: 18px;
+    }
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding: 0 0 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .topline h2 {
+      font-size: 22px;
+      margin: 0 0 4px;
+      line-height: 1.2;
+    }
+    .status {
+      min-height: 26px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      background: #fffaf4;
+      border: 1px solid var(--line);
+      max-width: 520px;
+    }
+    .status-column {
+      width: min(520px, 44vw);
+      display: grid;
+      gap: 8px;
+    }
+    .progress-wrap {
+      display: grid;
+      gap: 5px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffaf4;
+    }
+    .progress-wrap[hidden] {
+      display: none;
+    }
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: #46392f;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .progress-track {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #eadccc;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+      transition: width 0.25s ease;
+    }
+    .progress-detail {
+      color: var(--muted);
+      font-size: 11px;
+      min-height: 14px;
+    }
+    .status.error {
+      color: #8f1d1d;
+      background: #fff1f0;
+      border-color: #ffccc7;
+    }
+    .status.warn {
+      color: #8a5a00;
+      background: #fff8e6;
+      border-color: #ffe0a3;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 15px;
+      min-height: 96px;
+      box-shadow: var(--shadow);
+    }
+    .metric .name {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .metric .value {
+      font-size: 24px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+    .metric .foot {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 7px;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 16px;
+      align-items: start;
+    }
+    .chart-panel, .side-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .chart-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      padding: 14px 16px 10px;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+    .tabbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tabbar button {
+      padding: 0 10px;
+      min-width: 64px;
+    }
+    .chart-wrap {
+      position: relative;
+      padding: 14px 16px 16px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 540px;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #fffaf4, #fffefd);
+    }
+    .tooltip {
+      position: absolute;
+      min-width: 160px;
+      pointer-events: none;
+      background: rgba(55, 42, 32, 0.93);
+      color: #fff;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      display: none;
+      z-index: 3;
+    }
+    .side-panel {
+      padding: 15px;
+    }
+    .side-panel h3 {
+      font-size: 15px;
+      margin: 0 0 12px;
+    }
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .mini-table th,
+    .mini-table td {
+      padding: 7px 0;
+      border-bottom: 1px solid #edf1f5;
+      text-align: right;
+    }
+    .mini-table th:first-child,
+    .mini-table td:first-child {
+      text-align: left;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty {
+      min-height: 560px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffdf9;
+      box-shadow: var(--shadow);
+    }
+    @media (max-width: 1000px) {
+      .app { grid-template-columns: 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--line); }
+      .workspace { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      canvas { height: 420px; }
+    }
+    @media (max-width: 620px) {
+      main, aside { padding: 16px; }
+      .topline { flex-direction: column; }
+      .status-column { width: 100%; }
+      .metrics { grid-template-columns: 1fr; }
+      .segmented { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .bench-row { grid-template-columns: 20px 1fr; }
+      .bench-row input[type="text"]:last-child { grid-column: 2; }
+      canvas { height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">NAV</div>
+        <div>
+          <h1>实盘净值</h1>
+          <div class="subtle">全市场等权 · 策略回测</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>区间</label>
+        <div class="segmented period" id="periodButtons">
+          <button data-value="ALL" class="active">全部</button>
+          <button data-value="CUSTOM">自定义</button>
+        </div>
+      </div>
+
+      <div class="field" id="customDates" style="display:none;">
+        <label>自定义日期</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <input id="startDate" type="date" />
+          <input id="endDate" type="date" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>调频</label>
+        <div class="segmented freq" id="frequencyButtons">
+          <button data-value="H">小时</button>
+          <button data-value="D" class="active">日频</button>
+          <button data-value="W">周频</button>
+          <button data-value="M">月频</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>基准</label>
+        <div class="subtle">北交所全市场等权</div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="runButton">刷新分析</button>
+        <button class="secondary" id="clearButton" title="清空结果">×</button>
+      </div>
+    </aside>
+
+    <main>
+      <div class="topline">
+        <div>
+          <h2>实盘与策略回测</h2>
+          <div class="subtle" id="rangeText">等待 analysis_latest.json</div>
+        </div>
+        <div class="status-column">
+          <div class="status" id="status">本地服务已就绪</div>
+          <div class="progress-wrap" id="progressWrap" hidden>
+            <div class="progress-meta">
+              <span id="progressStage">等待开始</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+            <div class="progress-detail" id="progressDetail"></div>
+          </div>
+        </div>
+      </div>
+
+      <section class="metrics" id="metrics">
+        <div class="metric"><div class="name">累计收益</div><div class="value">--</div><div class="foot">实盘</div></div>
+        <div class="metric"><div class="name">年化收益</div><div class="value">--</div><div class="foot">实盘</div></div>
+        <div class="metric"><div class="name">夏普</div><div class="value">--</div><div class="foot">实盘</div></div>
+        <div class="metric"><div class="name">相比北交所全市场超额收益</div><div class="value">--</div><div class="foot">实盘</div></div>
+        <div class="metric"><div class="name">最大回撤</div><div class="value">--</div><div class="foot">实盘</div></div>
+      </section>
+
+      <section class="workspace">
+        <div class="chart-panel" id="chartPanel" style="display:none;">
+          <div class="chart-head">
+            <div class="tabbar" id="chartTabs">
+              <button data-chart="live" class="active">实盘</button>
+              <button data-chart="backtest">策略回测</button>
+              <button data-chart="both">实盘与策略回测</button>
+              <button data-chart="excess">回测超额</button>
+            </div>
+            <div class="legend" id="legend"></div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="chart"></canvas>
+            <div class="tooltip" id="tooltip"></div>
+          </div>
+        </div>
+        <div class="empty" id="emptyState">正在读取 analysis_latest.json</div>
+
+        <aside class="side-panel" id="sidePanel" style="display:none;">
+          <h3>资产快照</h3>
+          <table class="mini-table">
+            <thead><tr><th>资产</th><th>资金量</th></tr></thead>
+            <tbody id="assetBody"></tbody>
+          </table>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const API_BASE = shouldUseLocalApiBase() ? "http://127.0.0.1:8501" : "";
+    const COLORS = ["#2563eb", "#d1495b", "#2f7d6d", "#7c3aed", "#c2842f", "#0f766e"];
+    const LIVE_LABEL = "实盘";
+    const BENCHMARK_FALLBACK = "北交所全市场等权";
+    let state = { period: "ALL", frequency: "D", result: null, chart: "live", running: false, progressTimer: null };
+
+    const $ = (id) => document.getElementById(id);
+
+    function shouldUseLocalApiBase() {
+      if (window.location.protocol === "file:") return true;
+      return false;
+    }
+
+    function apiUrl(path) {
+      return `${API_BASE}${path}`;
+    }
+
+    function setStatus(text, type) {
+      const el = $("status");
+      el.textContent = text || "";
+      el.className = "status" + (type ? " " + type : "");
+    }
+
+    function newRequestId() {
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, { ...options, signal: controller.signal })
+        .finally(() => window.clearTimeout(timer));
+    }
+
+    const ANALYSIS_TIMEOUT_MS = 60 * 60 * 1000;
+
+    function setProgress(progress) {
+      const percent = Math.max(0, Math.min(100, Number(progress && progress.percent) || 0));
+      $("progressWrap").hidden = false;
+      $("progressBar").style.width = `${percent.toFixed(1)}%`;
+      $("progressPercent").textContent = `${Math.round(percent)}%`;
+      $("progressStage").textContent = progress && progress.stage ? progress.stage : "分析中";
+      const detail = progress && progress.detail ? progress.detail : "";
+      const total = progress && progress.total ? ` (${progress.current || 0}/${progress.total})` : "";
+      $("progressDetail").textContent = `${detail}${total}`;
+    }
+
+    function resetProgress(hide = true) {
+      if (state.progressTimer) {
+        window.clearInterval(state.progressTimer);
+        state.progressTimer = null;
+      }
+      $("progressBar").style.width = "0%";
+      $("progressPercent").textContent = "0%";
+      $("progressStage").textContent = "等待开始";
+      $("progressDetail").textContent = "";
+      $("progressWrap").hidden = hide;
+    }
+
+    function startProgressPolling(requestId) {
+      if (state.progressTimer) window.clearInterval(state.progressTimer);
+      state.progressTimer = window.setInterval(async () => {
+        try {
+          const response = await fetchWithTimeout(apiUrl(`/api/analysis-progress/${encodeURIComponent(requestId)}`), { cache: "no-store" }, 4000);
+          if (!response.ok) return;
+          const progress = await response.json();
+          setProgress(progress);
+          if (progress.done) {
+            window.clearInterval(state.progressTimer);
+            state.progressTimer = null;
+          }
+        } catch (error) {
+          // Keep the last progress value visible; the main analysis request reports final errors.
+        }
+      }, 1000);
+    }
+
+    async function ensureBackendReady() {
+      try {
+        const response = await fetchWithTimeout(apiUrl("/health"), { cache: "no-store" }, 4000);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json().catch(() => null);
+        if (!data || data.ok !== true) throw new Error("健康检查返回异常");
+      } catch (error) {
+        throw new Error(`连不上后端 ${apiUrl("/health")}。请确认 FastAPI 服务已启动，并且当前网页和后端使用同一个端口。`);
+      }
+    }
+
+    async function readJsonResponse(response) {
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (error) {
+        throw new Error(`后端返回的不是 JSON（HTTP ${response.status}）。请确认请求发到了 FastAPI 的 8501 端口。`);
+      }
+      if (!response.ok || !data.ok) throw new Error(data.error || `分析失败（HTTP ${response.status}）`);
+      return data;
+    }
+
+    function explainError(error) {
+      const message = error && error.message ? error.message : String(error);
+      const name = error && error.name ? error.name : "";
+      if (name === "AbortError" || message.includes("AbortError") || message.toLowerCase().includes("aborted")) {
+        return "分析请求超时或被浏览器中断。后端可能仍在计算，请稍后刷新查看，或检查服务日志。";
+      }
+      if (message === "Failed to fetch" || message.includes("NetworkError") || message.includes("Load failed")) {
+        return `请求没有发到后端。请确认当前网址对应的 FastAPI 服务可以打开；当前接口地址：${apiUrl("/api/analyze-latest")}`;
+      }
+      if (message.includes("AbortError")) {
+        return "请求超时：后端还没有返回，可能服务未启动或本次计算耗时太久。";
+      }
+      return message;
+    }
+
+    function wireSegmented(containerId, key) {
+      const container = $(containerId);
+      container.addEventListener("click", (event) => {
+        if (event.target.tagName !== "BUTTON") return;
+        container.querySelectorAll("button").forEach((btn) => btn.classList.remove("active"));
+        event.target.classList.add("active");
+        state[key] = event.target.dataset.value;
+        if (key === "period") {
+          $("customDates").style.display = state.period === "CUSTOM" ? "block" : "none";
+        }
+      });
+    }
+
+    wireSegmented("periodButtons", "period");
+    wireSegmented("frequencyButtons", "frequency");
+
+    $("chartTabs").addEventListener("click", (event) => {
+      if (event.target.tagName !== "BUTTON") return;
+      $("chartTabs").querySelectorAll("button").forEach((btn) => btn.classList.remove("active"));
+      event.target.classList.add("active");
+      state.chart = event.target.dataset.chart;
+      updateMetrics();
+      renderChart();
+    });
+
+    $("clearButton").addEventListener("click", () => {
+      state.result = null;
+      $("chartPanel").style.display = "none";
+      $("sidePanel").style.display = "none";
+      $("emptyState").style.display = "grid";
+      $("rangeText").textContent = "等待 analysis_latest.json";
+      $("assetBody").innerHTML = "";
+      resetProgress(true);
+      setStatus("本地服务已就绪");
+      updateMetrics(null);
+    });
+
+    $("runButton").addEventListener("click", () => {
+      runLatestAnalysis(false);
+    });
+
+    async function runLatestAnalysis(isAuto) {
+      $("runButton").disabled = true;
+      state.running = true;
+      const requestId = newRequestId();
+      resetProgress(false);
+      setProgress({ percent: 1, stage: "连接后端", detail: "准备开始分析" });
+      startProgressPolling(requestId);
+
+      try {
+        setStatus("正在连接本地后端...");
+        await ensureBackendReady();
+        setProgress({ percent: 3, stage: "读取数据", detail: "等待后端读取 analysis_latest.json" });
+        setStatus(isAuto ? "正在读取 analysis_latest.json..." : "正在刷新 analysis_latest.json...");
+        const options = collectOptions();
+        setStatus("正在提交分析，数据量大时请稍等...");
+        const response = await fetchWithTimeout(apiUrl("/api/analyze-latest"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ options, requestId })
+        }, ANALYSIS_TIMEOUT_MS);
+        const data = await readJsonResponse(response);
+        state.result = data;
+        setProgress({ percent: 100, stage: "分析完成", detail: "图表数据已生成" });
+        renderResult();
+      } catch (error) {
+        console.error(error);
+        setProgress({ percent: 100, stage: "分析失败", detail: explainError(error) });
+        setStatus(explainError(error), "error");
+      } finally {
+        state.running = false;
+        $("runButton").disabled = false;
+        if (state.progressTimer) {
+          window.clearInterval(state.progressTimer);
+          state.progressTimer = null;
+        }
+      }
+    }
+
+    function collectOptions() {
+      return {
+        period: state.period,
+        frequency: state.frequency,
+        startDate: $("startDate").value,
+        endDate: $("endDate").value,
+        strategyName: "策略回测",
+        benchmarks: []
+      };
+    }
+
+    function renderResult() {
+      const result = state.result;
+      $("chartPanel").style.display = "block";
+      $("sidePanel").style.display = "block";
+      $("emptyState").style.display = "none";
+      const [start, end] = result.metadata.dateRange;
+      $("rangeText").textContent = `${start} 至 ${end} · ${result.metadata.assetCount} 个资产 · ${result.metadata.sourceRows} 个资金点`;
+      const warnings = result.warnings || [];
+      if (warnings.length) setStatus(warnings.join("；"), "warn");
+      else setStatus("分析完成");
+      updateMetrics();
+      updateAssets(result.assets || []);
+      renderChart();
+    }
+
+    function updateMetrics(metrics = state.result && state.result.metrics) {
+      const panel = $("metrics");
+      if (!metrics) {
+        panel.innerHTML = [
+          metricCard("累计收益", "--", LIVE_LABEL),
+          metricCard("年化收益", "--", LIVE_LABEL),
+          metricCard("夏普", "--", LIVE_LABEL),
+          metricCard("相比北交所全市场超额收益", "--", LIVE_LABEL),
+          metricCard("最大回撤", "--", LIVE_LABEL)
+        ].join("");
+        return;
+      }
+
+      const subjects = metricSubjects(metrics);
+      const cards = [];
+      subjects.forEach(({ name, item }) => {
+        const excess = excessReturn(metrics, name);
+        cards.push(metricCard("累计收益", fmtPct(item && item.totalReturn), name));
+        cards.push(metricCard("年化收益", fmtPct(item && item.annualReturn), name));
+        cards.push(metricCard("夏普", fmtNumber(item && item.sharpe, 2), name));
+        cards.push(metricCard("相比北交所全市场超额收益", fmtPct(excess), name));
+        cards.push(metricCard("最大回撤", fmtPct(item && item.maxDrawdown), name));
+        if (state.chart === "excess") {
+          cards.push(metricCard("超额曲线夏普比率", fmtNumber(excessSharpe(metrics, name, "gross"), 2), name));
+          cards.push(metricCard("含手续费超额夏普比率", fmtNumber(excessSharpe(metrics, name, "withFee"), 2), name));
+        }
+      });
+      panel.innerHTML = cards.join("");
+    }
+
+    function metricSubjects(metrics) {
+      const strategies = metrics && metrics.strategies ? metrics.strategies : {};
+      const strategyEntries = Object.entries(strategies);
+      if (state.chart === "backtest" || state.chart === "excess") {
+        return strategyEntries.map(([name, item]) => ({ name, item }));
+      }
+      if (state.chart === "both") {
+        return [{ name: LIVE_LABEL, item: metrics.portfolio || null }, ...strategyEntries.map(([name, item]) => ({ name, item }))];
+      }
+      return [{ name: LIVE_LABEL, item: metrics.portfolio || null }];
+    }
+
+    function excessReturn(metrics, name) {
+      const excess = metrics && metrics.excessReturns ? metrics.excessReturns : {};
+      const row = excess[name] || {};
+      if (row[BENCHMARK_FALLBACK] !== undefined) return row[BENCHMARK_FALLBACK];
+      const firstValue = Object.values(row).find((value) => value !== null && value !== undefined);
+      return firstValue === undefined ? null : firstValue;
+    }
+
+    function excessSharpe(metrics, name, kind) {
+      const sharpes = metrics && metrics.excessSharpes ? metrics.excessSharpes : {};
+      const row = sharpes[name] || {};
+      const benchmark = chartBenchmarkKey();
+      const item = row[benchmark] || Object.values(row)[0] || {};
+      return item[kind] === undefined ? null : item[kind];
+    }
+
+    function metricCard(name, value, foot) {
+      return `<div class="metric"><div class="name">${escapeHtml(name)}</div><div class="value">${escapeHtml(value || "--")}</div><div class="foot">${escapeHtml(foot || "")}</div></div>`;
+    }
+
+    function updateAssets(assets) {
+      const body = $("assetBody");
+      body.innerHTML = "";
+      assets
+        .filter((item) => item.capital !== null && item.capital !== undefined)
+        .sort((a, b) => Math.abs(b.capital) - Math.abs(a.capital))
+        .slice(0, 14)
+        .forEach((item) => {
+          const tr = document.createElement("tr");
+          const asset = document.createElement("td");
+          const capital = document.createElement("td");
+          asset.textContent = item.asset;
+          capital.textContent = fmtMoney(item.capital);
+          tr.append(asset, capital);
+          body.appendChild(tr);
+        });
+    }
+
+    function currentRows() {
+      if (!state.result) return [];
+      const seriesName = state.chart === "excess" ? "excess" : "nav";
+      const rows = state.result.series[seriesName] || [];
+      const wanted = chartKeys();
+      return rows.map((row) => {
+        const item = { date: row.date };
+        wanted.forEach((key) => {
+          if (Object.prototype.hasOwnProperty.call(row, key)) item[key] = row[key];
+        });
+        return item;
+      }).filter((row) => rowHasAnyValue(row, wanted));
+    }
+
+    function isFiniteValue(value) {
+      return value !== null && value !== undefined && Number.isFinite(Number(value));
+    }
+
+    function rowHasAnyValue(row, wanted) {
+      return wanted.some((key) => isFiniteValue(row[key]));
+    }
+
+    function chartKeys() {
+      const benchmark = chartBenchmarkKey();
+      const strategies = Object.keys((state.result && state.result.metrics && state.result.metrics.strategies) || {});
+      const seriesName = state.chart === "excess" ? "excess" : "nav";
+      const available = availableSeriesKeys(seriesName);
+      if (state.chart === "excess") {
+        return [...available].filter((key) => strategies.some((strategy) => (
+          key === `${strategy}相对${benchmark}超额`
+          || (key.startsWith(`${strategy}相对`) && key.endsWith("超额"))
+        )) || key === "含手续费超额单利");
+      }
+      const requested = state.chart === "backtest"
+        ? [...strategies, benchmark]
+        : state.chart === "both"
+          ? [LIVE_LABEL, ...strategies, benchmark]
+          : [LIVE_LABEL, benchmark];
+      return requested.filter((key) => available.has(key));
+    }
+
+    function chartBenchmarkKey() {
+      const metrics = state.result && state.result.metrics ? state.result.metrics : {};
+      const benchmarks = Object.keys(metrics.benchmarks || {});
+      return benchmarks[0] || BENCHMARK_FALLBACK;
+    }
+
+    function availableSeriesKeys(seriesName) {
+      const rows = state.result && state.result.series ? state.result.series[seriesName] || [] : [];
+      const keys = new Set();
+      rows.forEach((row) => {
+        Object.keys(row).forEach((key) => {
+          if (key !== "date" && isFiniteValue(row[key])) keys.add(key);
+        });
+      });
+      return keys;
+    }
+
+    function renderChart() {
+      const rows = currentRows();
+      const canvas = $("chart");
+      const tooltip = $("tooltip");
+      if (!rows.length) {
+        const ctx = canvas.getContext("2d");
+        resizeCanvas(canvas);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        $("legend").innerHTML = "";
+        return;
+      }
+
+      const keys = chartKeys().filter((key) => rows.some((row) => isFiniteValue(row[key])));
+      const series = keys.map((key, index) => ({
+        key,
+        color: seriesColor(key, index),
+        points: rows.map((row, idx) => ({ x: idx, date: row.date, y: row[key] })).filter((p) => p.y !== null && p.y !== undefined)
+      }));
+
+      $("legend").innerHTML = series.map((s) => `<span><i class="swatch" style="background:${s.color}"></i>${escapeHtml(s.key)}</span>`).join("");
+      drawLineChart(canvas, series, { percent: state.chart === "excess", rows });
+
+      canvas.onmousemove = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const idx = nearestIndex(canvas, rows.length, x);
+        const row = rows[Math.max(0, Math.min(rows.length - 1, idx))];
+        if (!row) return;
+        const lines = series.map((s) => {
+          const point = nearestPoint(s.points, idx);
+          if (!point) return "";
+          const text = state.chart === "excess" ? fmtPct(point.y) : fmtNumber(point.y, 3);
+          const suffix = point.date === row.date ? "" : ` (${escapeHtml(formatDateLabel(point.date))})`;
+          return `<div><span style="color:${s.color}">■</span> ${escapeHtml(s.key)}: ${text}${suffix}</div>`;
+        }).filter(Boolean);
+        tooltip.innerHTML = `<b>${row.date}</b>${lines.join("")}`;
+        tooltip.style.display = "block";
+        tooltip.style.left = Math.min(rect.width - 190, Math.max(8, x + 12)) + "px";
+        tooltip.style.top = "24px";
+      };
+      canvas.onmouseleave = () => { tooltip.style.display = "none"; };
+    }
+
+    function resizeCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(300, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(260, Math.floor(rect.height * dpr));
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { width: rect.width, height: rect.height, ctx };
+    }
+
+    function drawLineChart(canvas, series, options) {
+      const { width, height, ctx } = resizeCanvas(canvas);
+      ctx.clearRect(0, 0, width, height);
+
+      const margin = { left: 58, right: 22, top: 22, bottom: 58 };
+      const plotW = width - margin.left - margin.right;
+      const plotH = height - margin.top - margin.bottom;
+      const allPoints = series.flatMap((s) => s.points);
+      const yValues = allPoints.map((p) => p.y).filter((v) => Number.isFinite(v));
+      if (!yValues.length) return;
+      let yMin = Math.min(...yValues);
+      let yMax = Math.max(...yValues);
+      if (Math.abs(yMax - yMin) < 1e-9) {
+        yMax += Math.abs(yMax || 1) * 0.05;
+        yMin -= Math.abs(yMin || 1) * 0.05;
+      }
+      const pad = (yMax - yMin) * 0.08;
+      yMax += pad;
+      yMin -= pad;
+      const axisRows = options.rows || [];
+      const maxX = Math.max(1, axisRows.length ? axisRows.length - 1 : Math.max(...allPoints.map((p) => p.x)));
+      const xScale = (x) => margin.left + (x / maxX) * plotW;
+      const yScale = (y) => margin.top + (1 - (y - yMin) / (yMax - yMin)) * plotH;
+
+      ctx.strokeStyle = "#eadfd3";
+      ctx.lineWidth = 1;
+      ctx.fillStyle = "#7b6b5d";
+      ctx.font = "12px Microsoft YaHei, Segoe UI, Arial";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i <= 4; i += 1) {
+        const y = margin.top + (plotH / 4) * i;
+        const value = yMax - ((yMax - yMin) / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(margin.left, y);
+        ctx.lineTo(width - margin.right, y);
+        ctx.stroke();
+        ctx.fillText(options.percent ? fmtPct(value) : fmtAxis(value), margin.left - 8, y);
+      }
+
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      const dateSource = axisRows.length ? axisRows : series[0].points;
+      const labelCount = Math.min(6, dateSource.length);
+      for (let i = 0; i < labelCount; i += 1) {
+        const idx = Math.round((dateSource.length - 1) * (i / Math.max(1, labelCount - 1)));
+        const p = dateSource[idx];
+        if (!p) continue;
+        const xValue = Number.isFinite(Number(p.x)) ? Number(p.x) : idx;
+        ctx.fillText(formatDateLabel(p.date), xScale(xValue), height - margin.bottom + 16);
+      }
+
+      series.forEach((s) => {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 3.2;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        s.points.forEach((p, i) => {
+          const x = xScale(p.x);
+          const y = yScale(p.y);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      });
+    }
+
+    function nearestIndex(canvas, length, mouseX) {
+      const rect = canvas.getBoundingClientRect();
+      const left = 58;
+      const right = 22;
+      const plotW = rect.width - left - right;
+      const ratio = Math.max(0, Math.min(1, (mouseX - left) / plotW));
+      return Math.round(ratio * Math.max(1, length - 1));
+    }
+
+    function nearestPoint(points, targetX) {
+      if (!points || !points.length) return null;
+      let best = points[0];
+      let bestDistance = Math.abs(Number(best.x) - targetX);
+      for (let i = 1; i < points.length; i += 1) {
+        const point = points[i];
+        const distance = Math.abs(Number(point.x) - targetX);
+        if (distance < bestDistance) {
+          best = point;
+          bestDistance = distance;
+        }
+      }
+      return best;
+    }
+
+    function fmtPct(value) {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
+      return (Number(value) * 100).toFixed(2) + "%";
+    }
+
+    function fmtNumber(value, digits) {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
+      return Number(value).toFixed(digits);
+    }
+
+    function fmtAxis(value) {
+      const abs = Math.abs(value);
+      if (abs >= 100000000) return (value / 100000000).toFixed(1) + "亿";
+      if (abs >= 10000) return (value / 10000).toFixed(1) + "万";
+      return Number(value).toFixed(2);
+    }
+
+    function seriesColor(key, index) {
+      if (key === "含手续费超额单利") return "#d4a017";
+      if (state.chart === "excess") return "#7c3aed";
+      if (key === BENCHMARK_FALLBACK || key.includes("全市场")) return "#d1495b";
+      if (key === LIVE_LABEL) return "#2563eb";
+      if (state.chart === "backtest") return "#2563eb";
+      if (state.chart === "both") return "#2f7d6d";
+      return COLORS[index % COLORS.length];
+    }
+
+    function formatDateLabel(value) {
+      const text = String(value || "");
+      return text.length >= 10 ? text.slice(0, 10) : text;
+    }
+
+    function fmtMoney(value) {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
+      const abs = Math.abs(value);
+      if (abs >= 100000000) return (value / 100000000).toFixed(2) + "亿";
+      if (abs >= 10000) return (value / 10000).toFixed(2) + "万";
+      return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    window.addEventListener("resize", () => {
+      if (state.result) renderChart();
+    });
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      setStatus("正在连接本地后端...");
+      try {
+        await ensureBackendReady();
+        await runLatestAnalysis(true);
+      } catch (error) {
+        if (!state.running && !state.result) {
+          setStatus(explainError(error), "error");
+        }
+      }
+    });
+  </script>
+</body>
+</html>
